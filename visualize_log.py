@@ -30,11 +30,9 @@ def visualize(lines):
     axl = plt.subplot(2, 1, 2)
     axl.plot(np.array(epoch_x), np.array(training_loss))
     axl.set_ylabel("training loss")
-    axl.legend(("training loss",), loc="upper center")
     axr = axl.twinx()
-    axr.plot(np.array(epoch_x), np.array(validation_mAP), "r", label="validation mAP")
+    axr.plot(np.array(epoch_x), np.array(validation_mAP), "r")
     axr.set_ylabel("validation mAP")
-    axr.legend(("validation mAP",), loc="upper right")
     plt.grid(True)
     plt.show()
 
