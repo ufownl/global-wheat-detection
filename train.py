@@ -3,6 +3,7 @@ import time
 import random
 import argparse
 import mxnet as mx
+import gluoncv as gcv
 from dataset import load_dataset, get_batches
 from model import init_model, load_model
 
@@ -20,6 +21,7 @@ def train(max_epochs, learning_rate, batch_size, img_w, img_h, sgd, context):
         model = load_model("model/global-wheat-yolo3-darknet53.params", ctx=context)
     else:
         model = init_model(ctx=context)
+    metric = gcv.utils.metrics.VOCMApMetric()
 
     print("Learning rate: ", learning_rate)
     if sgd:
@@ -59,8 +61,19 @@ def train(max_epochs, learning_rate, batch_size, img_w, img_h, sgd, context):
             ), flush=True)
         training_avg_L = training_total_L / training_batches
 
-        print("[Epoch %d]  training_loss %.10f  duration %.2fs" % (
-            epoch + 1, training_avg_L, time.time() - ts
+        metric.reset()
+        for x, label in get_batches(validation_set, batch_size, width=img_w, height=img_h, ctx=context):
+            classes, scores, bboxes = model(x)
+            metric.update(
+                bboxes,
+                classes.reshape((0, -1)),
+                scores.reshape((0, -1)),
+                label[:, :, :4],
+                label[:, :, 4:5].reshape((0, -1))
+            )
+
+        print("[Epoch %d]  training_loss %.10f  %s %.10f  duration %.2fs" % (
+            epoch + 1, training_avg_L, *metric.get(), time.time() - ts
         ), flush=True)
 
         model.save_parameters("model/global-wheat-yolo3-darknet53.params")
