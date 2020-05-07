@@ -19,7 +19,10 @@ def load_dataset(root):
             data[key].append(bbox)
         else:
             data[key] = [bbox]
-    return [(os.path.join(root, "train", k + ".jpg"), v) for k, v in data.items()]
+    return sorted(
+        [(k, os.path.join(root, "train", k + ".jpg"), v) for k, v in data.items()],
+        key=lambda x: x[0]
+    )
 
 def load_image(path):
     with open(path, "rb") as f:
@@ -58,8 +61,8 @@ class Sampler:
             self._transform = gcv.data.transforms.presets.yolo.YOLO3DefaultTrainTransform(width, height, net=net, **kwargs)
 
     def __call__(self, data):
-        raw = load_image(data[0])
-        res = self._transform(raw, np.array(data[1]))
+        raw = load_image(data[1])
+        res = self._transform(raw, np.array(data[2]))
         return [mx.nd.array(x, ctx=self._ctx) for x in res]
 
 
@@ -74,7 +77,7 @@ if __name__ == "__main__":
     print("data visual preview: ")
     sampler = Sampler(1024, 1024, net)
     for i, x in enumerate(data):
-        print(data[i][0])
+        print(data[i][1])
         y = sampler(x)
         gcv.utils.viz.plot_bbox(reconstruct_color(y[0].transpose((1, 2, 0))), y[6])
         plt.show()
