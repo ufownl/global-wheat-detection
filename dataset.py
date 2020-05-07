@@ -1,6 +1,5 @@
 import os
 import json
-import warnings
 import numpy as np
 import mxnet as mx
 import pandas as pd
@@ -65,12 +64,10 @@ class Sampler:
 
 
 if __name__ == "__main__":
+    from model import init_model
+    net = init_model()
     data = load_dataset("./data")
     print("dataset preview: ", data[:3])
-    net = gcv.model_zoo.yolo3_darknet53_custom(["wheat"])
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        net.initialize(mx.init.Xavier())
     print("training batch preview: ", next(get_batches(data, 4, net=net)))
     print("validation batch preview: ", next(get_batches(data, 4)))
     import matplotlib.pyplot as plt
