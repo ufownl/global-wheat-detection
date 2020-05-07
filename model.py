@@ -4,7 +4,7 @@ import gluoncv as gcv
 
 
 def init_model(ctx=mx.cpu()):
-    net = gcv.model_zoo.yolo3_darknet53_custom(["wheat"])
+    net = gcv.model_zoo.yolo3_darknet53_custom(["wheat"], ctx=ctx)
     with warnings.catch_warnings(record=True) as w:
         warnings.simplefilter("always")
         net.initialize(mx.init.Xavier(), ctx=ctx)

@@ -29,11 +29,11 @@ def load_image(path):
         buf = f.read()
     return mx.image.imdecode(buf)
 
-def get_batches(dataset, batch_size, width=1024, height=1024, net=None, ctx=mx.cpu()):
+def get_batches(dataset, batch_size, width=256, height=256, net=None, ctx=mx.cpu()):
     batches = len(dataset) // batch_size
     if batches * batch_size < len(dataset):
         batches += 1
-    sampler = Sampler(width, height, net, ctx)
+    sampler = Sampler(width, height, net)
     with Pool(cpu_count() * 2) as p:
         for i in range(batches):
             start = i * batch_size
@@ -41,9 +41,10 @@ def get_batches(dataset, batch_size, width=1024, height=1024, net=None, ctx=mx.c
             stack_fn = [gcv.data.batchify.Stack()]
             pad_fn = [gcv.data.batchify.Pad(pad_val=-1)]
             if net is None:
-                yield gcv.data.batchify.Tuple(*(stack_fn + pad_fn))(samples)
+                batch = gcv.data.batchify.Tuple(*(stack_fn + pad_fn))(samples)
             else:
-                yield gcv.data.batchify.Tuple(*(stack_fn * 6 + pad_fn))(samples)
+                batch = gcv.data.batchify.Tuple(*(stack_fn * 6 + pad_fn))(samples)
+            yield [x.as_in_context(ctx) for x in batch]
 
 def reconstruct_color(img):
     mean = mx.nd.array([0.485, 0.456, 0.406])
@@ -52,9 +53,8 @@ def reconstruct_color(img):
 
 
 class Sampler:
-    def __init__(self, width, height, net=None, ctx=mx.cpu(), **kwargs):
+    def __init__(self, width, height, net=None, **kwargs):
         self._net = net
-        self._ctx = ctx
         if net is None:
             self._transform = gcv.data.transforms.presets.yolo.YOLO3DefaultValTransform(width, height, **kwargs)
         else:
@@ -63,19 +63,19 @@ class Sampler:
     def __call__(self, data):
         raw = load_image(data[1])
         res = self._transform(raw, np.array(data[2]))
-        return [mx.nd.array(x, ctx=self._ctx) for x in res]
+        return [mx.nd.array(x) for x in res]
 
 
 if __name__ == "__main__":
     from model import init_model
     net = init_model()
-    data = load_dataset("./data")
+    data = load_dataset("data")
     print("dataset preview: ", data[:3])
     print("training batch preview: ", next(get_batches(data, 4, net=net)))
     print("validation batch preview: ", next(get_batches(data, 4)))
     import matplotlib.pyplot as plt
     print("data visual preview: ")
-    sampler = Sampler(1024, 1024, net)
+    sampler = Sampler(256, 256, net)
     for i, x in enumerate(data):
         print(data[i][1])
         y = sampler(x)
