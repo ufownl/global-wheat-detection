@@ -8,7 +8,7 @@ from dataset import load_dataset, get_batches
 from model import init_model, load_model
 
 
-def train(max_epochs, learning_rate, batch_size, img_w, img_h, sgd, context):
+def train(start_epoch, max_epochs, learning_rate, batch_size, img_w, img_h, sgd, context):
     print("Loading dataset...", flush=True)
     dataset = load_dataset("data")
     split = int(len(dataset) * 0.9)
@@ -41,7 +41,7 @@ def train(max_epochs, learning_rate, batch_size, img_w, img_h, sgd, context):
         trainer.load_states("model/global-wheat-yolo3-darknet53.state")
 
     print("Traning...", flush=True)
-    for epoch in range(max_epochs):
+    for epoch in range(start_epoch, max_epochs):
         ts = time.time()
 
         random.shuffle(training_set)
@@ -84,6 +84,7 @@ def train(max_epochs, learning_rate, batch_size, img_w, img_h, sgd, context):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Start a global-wheat-detection trainer.")
+    parser.add_argument("--start_epoch", help="set the start epoch (default: 0)", type=int, default=0)
     parser.add_argument("--max_epochs", help="set the max epochs (default: 100)", type=int, default=100)
     parser.add_argument("--learning_rate", help="set the learning rate (default: 0.001)", type=float, default=0.001)
     parser.add_argument("--batch_size", help="set the batch size (default: 32)", type=int, default=32)
@@ -99,4 +100,4 @@ if __name__ == "__main__":
     else:
         context = mx.cpu(args.device_id)
 
-    train(args.max_epochs, args.learning_rate, args.batch_size, args.img_w, args.img_h, args.sgd, context)
+    train(args.start_epoch, args.max_epochs, args.learning_rate, args.batch_size, args.img_w, args.img_h, args.sgd, context)
