@@ -71,6 +71,7 @@ if __name__ == "__main__":
     net = init_model()
     data = load_dataset("data")
     print("dataset preview: ", data[:3])
+    print("max count of bboxes: ", max([len(bboxes) for _, _, bboxes in data]))
     print("training batch preview: ", next(get_batches(data, 4, net=net)))
     print("validation batch preview: ", next(get_batches(data, 4)))
     import matplotlib.pyplot as plt
