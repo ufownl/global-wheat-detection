@@ -29,7 +29,7 @@ def load_image(path):
         buf = f.read()
     return mx.image.imdecode(buf)
 
-def get_batches(dataset, batch_size, width=256, height=256, net=None, ctx=mx.cpu()):
+def get_batches(dataset, batch_size, width=512, height=512, net=None, ctx=mx.cpu()):
     batches = len(dataset) // batch_size
     if batches * batch_size < len(dataset):
         batches += 1
@@ -75,7 +75,7 @@ if __name__ == "__main__":
     print("validation batch preview: ", next(get_batches(data, 4)))
     import matplotlib.pyplot as plt
     print("data visual preview: ")
-    sampler = Sampler(256, 256, net)
+    sampler = Sampler(512, 512, net)
     for i, x in enumerate(data):
         print(data[i][1])
         y = sampler(x)
