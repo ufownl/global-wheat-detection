@@ -1,5 +1,7 @@
 import os
+import cv2
 import json
+import random
 import numpy as np
 import mxnet as mx
 import pandas as pd
@@ -51,6 +53,19 @@ def reconstruct_color(img):
     std = mx.nd.array([0.229, 0.224, 0.225])
     return ((img * std + mean) * 255).astype("uint8")
 
+def gauss_blur(image, level):
+    return cv2.blur(image, (level * 2 + 1, level * 2 + 1))
+
+def gauss_noise(image):
+    for i in range(image.shape[2]):
+        c = image[:, :, i]
+        diff = 255 - c.max();
+        noise = np.random.normal(0, random.randint(1, 6), c.shape)
+        noise = (noise - noise.min()) / (noise.max() - noise.min())
+        noise = diff * noise
+        image[:, :, i] = c + noise.astype(np.uint8)
+    return image
+
 
 class Sampler:
     def __init__(self, width, height, net=None, **kwargs):
@@ -62,7 +77,18 @@ class Sampler:
 
     def __call__(self, data):
         raw = load_image(data[1])
-        res = self._transform(raw, np.array(data[2]))
+        bboxes = np.array(data[2])
+        if not self._net is None:
+            raw = raw.asnumpy()
+            blur = random.randint(0, 3)
+            if blur > 0:
+                raw = gauss_blur(raw, blur)
+            raw = gauss_noise(raw)
+            raw = mx.nd.array(raw)
+            h, w, _ = raw.shape
+            raw, flips = gcv.data.transforms.image.random_flip(raw, py=0.5)
+            bboxes = gcv.data.transforms.bbox.flip(bboxes, (w, h), flip_y=flips[1])
+        res = self._transform(raw, bboxes)
         return [mx.nd.array(x) for x in res]
 
 
