@@ -23,7 +23,7 @@ def train(start_epoch, max_epochs, learning_rate, batch_size, img_w, img_h, sgd,
         model = init_model(ctx=context)
     # Fix the parameters of Darknet
     model.stages.collect_params().setattr('lr_mult', 0.0)
-    metric = gcv.utils.metrics.VOCMApMetric()
+    metrics = [gcv.utils.metrics.VOCMApMetric(iou_thresh=iou) for iou in [0.5, 0.55, 0.6, 0.65, 0.7, 0.75]]
 
     print("Learning rate: ", learning_rate)
     if sgd:
@@ -63,19 +63,22 @@ def train(start_epoch, max_epochs, learning_rate, batch_size, img_w, img_h, sgd,
             ), flush=True)
         training_avg_L = training_total_L / training_batches
 
-        metric.reset()
+        for metric in metrics:
+            metric.reset()
         for x, label in get_batches(validation_set, batch_size, width=img_w, height=img_h, ctx=context):
             classes, scores, bboxes = model(x)
-            metric.update(
-                bboxes,
-                classes.reshape((0, -1)),
-                scores.reshape((0, -1)),
-                label[:, :, :4],
-                label[:, :, 4:5].reshape((0, -1))
-            )
+            for metric in metrics:
+                metric.update(
+                    bboxes,
+                    classes.reshape((0, -1)),
+                    scores.reshape((0, -1)),
+                    label[:, :, :4],
+                    label[:, :, 4:5].reshape((0, -1))
+                )
+        score = mx.nd.array([metric.get()[1] for metric in metrics], ctx=context).mean()
 
-        print("[Epoch %d]  training_loss %.10f  %s %.10f  duration %.2fs" % (
-            epoch + 1, training_avg_L, *metric.get(), time.time() - ts
+        print("[Epoch %d]  training_loss %.10f  validation_score %.10f  duration %.2fs" % (
+            epoch + 1, training_avg_L, score.asscalar(), time.time() - ts
         ), flush=True)
 
         model.save_parameters("model/global-wheat-yolo3-darknet53.params")
