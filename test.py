@@ -14,8 +14,8 @@ def test(images, threshold, img_s, context):
         raw = load_image(path)
         x, _ = gcv.data.transforms.presets.yolo.transform_test(raw, short=img_s)
         classes, scores, bboxes = model(x.as_in_context(context))
-        bboxes[0, :, 0::2] = bboxes[0, :, 0::2] / x.shape[3] * raw.shape[1]
-        bboxes[0, :, 1::2] = bboxes[0, :, 1::2] / x.shape[2] * raw.shape[0]
+        bboxes[0, :, 0::2] = (bboxes[0, :, 0::2] / x.shape[3]).clip(0.0, 1.0) * raw.shape[1]
+        bboxes[0, :, 1::2] = (bboxes[0, :, 1::2] / x.shape[2]).clip(0.0, 1.0) * raw.shape[0]
         gcv.utils.viz.plot_bbox(raw, [
             bboxes[0, i].asnumpy() for i in range(classes.shape[1])
                 if model.classes[int(classes[0, i].asscalar())] == "wheat" and scores[0, i].asscalar() > threshold
