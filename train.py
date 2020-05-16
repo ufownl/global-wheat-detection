@@ -21,8 +21,6 @@ def train(start_epoch, max_epochs, learning_rate, batch_size, img_w, img_h, sgd,
         model = load_model("model/global-wheat-yolo3-darknet53.params", ctx=context)
     else:
         model = init_model(ctx=context)
-    # Fix the parameters of Darknet
-    model.stages.collect_params().setattr('lr_mult', 0.0)
     metrics = [gcv.utils.metrics.VOCMApMetric(iou_thresh=iou) for iou in [0.5, 0.55, 0.6, 0.65, 0.7, 0.75]]
 
     print("Learning rate: ", learning_rate)
