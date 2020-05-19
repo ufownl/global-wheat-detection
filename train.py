@@ -8,7 +8,7 @@ from dataset import load_dataset, get_batches
 from model import init_model, load_model
 
 
-def train(start_epoch, max_epochs, learning_rate, batch_size, img_w, img_h, sgd, context):
+def train(best_score, start_epoch, max_epochs, learning_rate, batch_size, img_w, img_h, sgd, context):
     print("Loading dataset...", flush=True)
     dataset = load_dataset("data")
     split = int(len(dataset) * 0.9)
@@ -75,9 +75,13 @@ def train(start_epoch, max_epochs, learning_rate, batch_size, img_w, img_h, sgd,
                 )
         score = mx.nd.array([metric.get()[1] for metric in metrics], ctx=context).mean()
 
-        print("[Epoch %d]  training_loss %.10f  validation_score %.10f  duration %.2fs" % (
-            epoch + 1, training_avg_L, score.asscalar(), time.time() - ts
+        print("[Epoch %d]  training_loss %.10f  validation_score %.10f  best_score %.10f  duration %.2fs" % (
+            epoch + 1, training_avg_L, score.asscalar(), best_score, time.time() - ts
         ), flush=True)
+
+        if score.asscalar() > best_score:
+            best_score = score.asscalar()
+            model.save_parameters("model/global-wheat-yolo3-darknet53_best.params")
 
         model.save_parameters("model/global-wheat-yolo3-darknet53.params")
         trainer.save_states("model/global-wheat-yolo3-darknet53.state")
@@ -85,6 +89,7 @@ def train(start_epoch, max_epochs, learning_rate, batch_size, img_w, img_h, sgd,
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Start a global-wheat-detection trainer.")
+    parser.add_argument("--best_score", help="set the current best score (default: 0.0)", type=float, default=0.0)
     parser.add_argument("--start_epoch", help="set the start epoch (default: 0)", type=int, default=0)
     parser.add_argument("--max_epochs", help="set the max epochs (default: 100)", type=int, default=100)
     parser.add_argument("--learning_rate", help="set the learning rate (default: 0.001)", type=float, default=0.001)
@@ -101,4 +106,4 @@ if __name__ == "__main__":
     else:
         context = mx.cpu(args.device_id)
 
-    train(args.start_epoch, args.max_epochs, args.learning_rate, args.batch_size, args.img_w, args.img_h, args.sgd, context)
+    train(args.best_score, args.start_epoch, args.max_epochs, args.learning_rate, args.batch_size, args.img_w, args.img_h, args.sgd, context)
