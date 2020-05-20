@@ -1,5 +1,6 @@
 import os
 import cv2
+import copy
 import json
 import random
 import numpy as np
@@ -60,6 +61,65 @@ def gauss_noise(image):
     return image
 
 
+class YOLO3TrainTransform:
+    def __init__(self, width, height, net, mean=(0.485, 0.456, 0.406),
+                 std=(0.229, 0.224, 0.225), **kwargs):
+        self._width = width
+        self._height = height
+        self._mean = mean
+        self._std = std
+
+        # in case network has reset_ctx to gpu
+        self._fake_x = mx.nd.zeros((1, 3, height, width))
+        net = copy.deepcopy(net)
+        net.collect_params().reset_ctx(None)
+        with mx.autograd.train_mode():
+            _, self._anchors, self._offsets, self._feat_maps, _, _, _, _ = net(self._fake_x)
+        self._target_generator = gcv.model_zoo.yolo.yolo_target.YOLOV3PrefetchTargetGenerator(
+            num_class=len(net.classes), **kwargs)
+
+    def __call__(self, img, label):
+        # random expansion with prob 0.5
+        if np.random.uniform(0, 1) > 0.5:
+            img, expand = gcv.data.transforms.image.random_expand(img, max_ratio=1.5, fill=114, keep_ratio=False)
+            bbox = gcv.data.transforms.bbox.translate(label, x_offset=expand[0], y_offset=expand[1])
+        else:
+            img, bbox = img, label
+
+        # random cropping
+        h, w, _ = img.shape
+        bbox, crop = gcv.data.transforms.experimental.bbox.random_crop_with_constraints(bbox, (w, h))
+        x0, y0, w, h = crop
+        img = mx.image.fixed_crop(img, x0, y0, w, h)
+
+        # resize with random interpolation
+        h, w, _ = img.shape
+        interp = np.random.randint(0, 5)
+        img = gcv.data.transforms.image.imresize(img, self._width, self._height, interp=interp)
+        bbox = gcv.data.transforms.bbox.resize(bbox, (w, h), (self._width, self._height))
+
+        # random horizontal&vertical flip
+        h, w, _ = img.shape
+        img, flips = gcv.data.transforms.image.random_flip(img, px=0.5, py=0.5)
+        bbox = gcv.data.transforms.bbox.flip(bbox, (w, h), flip_x=flips[0], flip_y=flips[1])
+
+        # random color jittering
+        img = gcv.data.transforms.experimental.image.random_color_distort(img)
+
+        # to tensor
+        img = mx.nd.image.to_tensor(img)
+        img = mx.nd.image.normalize(img, mean=self._mean, std=self._std)
+
+        # generate training target so cpu workers can help reduce the workload on gpu
+        gt_bboxes = mx.nd.array(bbox[np.newaxis, :, :4])
+        gt_ids = mx.nd.array(bbox[np.newaxis, :, 4:5])
+        objectness, center_targets, scale_targets, weights, class_targets = self._target_generator(
+            self._fake_x, self._feat_maps, self._anchors, self._offsets,
+            gt_bboxes, gt_ids, None)
+        return (img, objectness[0], center_targets[0], scale_targets[0], weights[0],
+                class_targets[0], gt_bboxes[0])
+
+
 class Sampler:
     def __init__(self, dataset, width, height, net=None, **kwargs):
         self._dataset = dataset
@@ -68,23 +128,50 @@ class Sampler:
             self._transform = gcv.data.transforms.presets.yolo.YOLO3DefaultValTransform(width, height, **kwargs)
         else:
             self._training_mode = True
-            self._transform = gcv.data.transforms.presets.yolo.YOLO3DefaultTrainTransform(width, height, net=net, **kwargs)
+            self._transform = YOLO3TrainTransform(width, height, net, **kwargs)
 
     def __call__(self, idx):
-        raw = load_image(self._dataset[idx][1])
-        bboxes = np.array(self._dataset[idx][2])
         if self._training_mode:
-            raw = raw.asnumpy()
+            raw, bboxes = self._load_mosaic(idx)
             blur = random.randint(0, 3)
             if blur > 0:
                 raw = gauss_blur(raw, blur)
             raw = gauss_noise(raw)
             raw = mx.nd.array(raw)
-            h, w, _ = raw.shape
-            raw, flips = gcv.data.transforms.image.random_flip(raw, py=0.5)
-            bboxes = gcv.data.transforms.bbox.flip(bboxes, (w, h), flip_y=flips[1])
+        else:
+            raw = load_image(self._dataset[idx][1])
+            bboxes = np.array(self._dataset[idx][2])
         res = self._transform(raw, bboxes)
         return [mx.nd.array(x) for x in res]
+
+    def _load_mosaic(self, idx):
+        while True:
+            xc, yc = [random.uniform(0.5, 1.5) for _ in range(2)]
+            indices = [idx] + [random.randint(0, len(self._dataset) - 1) for _ in range(3)]
+            for i, idx in enumerate(indices):
+                img = load_image(self._dataset[idx][1]).asnumpy()
+                h, w, c = img.shape
+                bbs = np.array(self._dataset[idx][2])
+                if i == 0:
+                    mosaic = np.full((h * 2, w * 2, c), 114, np.uint8)
+                    mosaic_bbs = []
+                    xa1, ya1, xa2, ya2 = max(int(xc * w) - w, 0), max(int(yc * h) - h, 0), int(xc * w), int(yc * w)
+                    xb1, yb1, xb2, yb2 = w - (xa2 - xa1), h - (ya2 - ya1), w, h
+                elif i == 1:
+                    xa1, ya1, xa2, ya2 = int(xc * w), max(int(yc * h) - h, 0), min(int(xc * w) + w, w * 2), int(yc * h)
+                    xb1, yb1, xb2, yb2 = 0, h - (ya2 - ya1), min(w, xa2 - xa1), h
+                elif i == 2:
+                    xa1, ya1, xa2, ya2 = max(int(xc * w) - w, 0), int(yc * h), int(xc * w), min(int(yc * h) + h, h * 2)
+                    xb1, yb1, xb2, yb2 = w - (xa2 - xa1), 0, max(int(xc * w), w), min(ya2 - ya1, h)
+                elif i == 3:
+                    xa1, ya1, xa2, ya2 = int(xc * w), int(yc * h), min(int(xc * w) + w, w * 2), min(int(yc * h) + h, h * 2)
+                    xb1, yb1, xb2, yb2 = 0, 0, min(w, xa2 - xa1), min(h, ya2 - ya1)
+                mosaic[ya1:ya2, xa1:xa2] = img[yb1:yb2, xb1:xb2]
+                bbs[:, 0:4:2] = np.clip(bbs[:, 0:4:2] + xa1 - xb1, 0, w * 2)
+                bbs[:, 1:4:2] = np.clip(bbs[:, 1:4:2] + ya1 - yb1, 0, h * 2)
+                mosaic_bbs.append(bbs)
+            if len(mosaic_bbs) > 0:
+                return mosaic, np.concatenate(mosaic_bbs)
 
 
 def reconstruct_color(img):
