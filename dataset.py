@@ -33,13 +33,11 @@ def load_image(path):
 
 def get_batches(dataset, batch_size, width=512, height=512, net=None, ctx=mx.cpu()):
     batches = len(dataset) // batch_size
-    if batches * batch_size < len(dataset):
-        batches += 1
-    sampler = Sampler(width, height, net)
+    sampler = Sampler(dataset, width, height, net)
     with Pool(cpu_count() * 2) as p:
         for i in range(batches):
             start = i * batch_size
-            samples = p.map(sampler, dataset[start:start+batch_size])
+            samples = p.map(sampler, range(start, start + batch_size))
             stack_fn = [gcv.data.batchify.Stack()]
             pad_fn = [gcv.data.batchify.Pad(pad_val=-1)]
             if net is None:
@@ -63,17 +61,19 @@ def gauss_noise(image):
 
 
 class Sampler:
-    def __init__(self, width, height, net=None, **kwargs):
-        self._net = net
+    def __init__(self, dataset, width, height, net=None, **kwargs):
+        self._dataset = dataset
         if net is None:
+            self._training_mode = False
             self._transform = gcv.data.transforms.presets.yolo.YOLO3DefaultValTransform(width, height, **kwargs)
         else:
+            self._training_mode = True
             self._transform = gcv.data.transforms.presets.yolo.YOLO3DefaultTrainTransform(width, height, net=net, **kwargs)
 
-    def __call__(self, data):
-        raw = load_image(data[1])
-        bboxes = np.array(data[2])
-        if not self._net is None:
+    def __call__(self, idx):
+        raw = load_image(self._dataset[idx][1])
+        bboxes = np.array(self._dataset[idx][2])
+        if self._training_mode:
             raw = raw.asnumpy()
             blur = random.randint(0, 3)
             if blur > 0:
@@ -103,9 +103,9 @@ if __name__ == "__main__":
     print("validation batch preview: ", next(get_batches(data, 4)))
     import matplotlib.pyplot as plt
     print("data visual preview: ")
-    sampler = Sampler(512, 512, net)
+    sampler = Sampler(data, 512, 512, net)
     for i, x in enumerate(data):
-        print(data[i][1])
-        y = sampler(x)
+        print(x[1])
+        y = sampler(i)
         gcv.utils.viz.plot_bbox(reconstruct_color(y[0].transpose((1, 2, 0))), y[6])
         plt.show()
