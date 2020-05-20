@@ -48,11 +48,6 @@ def get_batches(dataset, batch_size, width=512, height=512, net=None, ctx=mx.cpu
                 batch = gcv.data.batchify.Tuple(*(stack_fn * 6 + pad_fn))(samples)
             yield [x.as_in_context(ctx) for x in batch]
 
-def reconstruct_color(img):
-    mean = mx.nd.array([0.485, 0.456, 0.406])
-    std = mx.nd.array([0.229, 0.224, 0.225])
-    return ((img * std + mean) * 255).astype("uint8")
-
 def gauss_blur(image, level):
     return cv2.blur(image, (level * 2 + 1, level * 2 + 1))
 
@@ -90,6 +85,12 @@ class Sampler:
             bboxes = gcv.data.transforms.bbox.flip(bboxes, (w, h), flip_y=flips[1])
         res = self._transform(raw, bboxes)
         return [mx.nd.array(x) for x in res]
+
+
+def reconstruct_color(img):
+    mean = mx.nd.array([0.485, 0.456, 0.406])
+    std = mx.nd.array([0.229, 0.224, 0.225])
+    return ((img * std + mean).clip(0.0, 1.0) * 255).astype("uint8")
 
 
 if __name__ == "__main__":
