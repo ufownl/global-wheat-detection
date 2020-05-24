@@ -131,47 +131,17 @@ class Sampler:
             self._transform = YOLO3TrainTransform(width, height, net, **kwargs)
 
     def __call__(self, idx):
+        raw = load_image(self._dataset[idx][1])
+        bboxes = np.array(self._dataset[idx][2])
         if self._training_mode:
-            raw, bboxes = self._load_mosaic(idx)
+            raw = raw.asnumpy()
             blur = random.randint(0, 3)
             if blur > 0:
                 raw = gauss_blur(raw, blur)
             raw = gauss_noise(raw)
             raw = mx.nd.array(raw)
-        else:
-            raw = load_image(self._dataset[idx][1])
-            bboxes = np.array(self._dataset[idx][2])
         res = self._transform(raw, bboxes)
         return [mx.nd.array(x) for x in res]
-
-    def _load_mosaic(self, idx):
-        while True:
-            xc, yc = [random.uniform(0.5, 1.5) for _ in range(2)]
-            indices = [idx] + [random.randint(0, len(self._dataset) - 1) for _ in range(3)]
-            for i, idx in enumerate(indices):
-                img = load_image(self._dataset[idx][1]).asnumpy()
-                h, w, c = img.shape
-                bbs = np.array(self._dataset[idx][2])
-                if i == 0:
-                    mosaic = np.full((h * 2, w * 2, c), 114, np.uint8)
-                    mosaic_bbs = []
-                    xa1, ya1, xa2, ya2 = max(int(xc * w) - w, 0), max(int(yc * h) - h, 0), int(xc * w), int(yc * w)
-                    xb1, yb1, xb2, yb2 = w - (xa2 - xa1), h - (ya2 - ya1), w, h
-                elif i == 1:
-                    xa1, ya1, xa2, ya2 = int(xc * w), max(int(yc * h) - h, 0), min(int(xc * w) + w, w * 2), int(yc * h)
-                    xb1, yb1, xb2, yb2 = 0, h - (ya2 - ya1), min(w, xa2 - xa1), h
-                elif i == 2:
-                    xa1, ya1, xa2, ya2 = max(int(xc * w) - w, 0), int(yc * h), int(xc * w), min(int(yc * h) + h, h * 2)
-                    xb1, yb1, xb2, yb2 = w - (xa2 - xa1), 0, max(int(xc * w), w), min(ya2 - ya1, h)
-                elif i == 3:
-                    xa1, ya1, xa2, ya2 = int(xc * w), int(yc * h), min(int(xc * w) + w, w * 2), min(int(yc * h) + h, h * 2)
-                    xb1, yb1, xb2, yb2 = 0, 0, min(w, xa2 - xa1), min(h, ya2 - ya1)
-                mosaic[ya1:ya2, xa1:xa2] = img[yb1:yb2, xb1:xb2]
-                bbs[:, 0:4:2] = np.clip(bbs[:, 0:4:2] + xa1 - xb1, 0, w * 2)
-                bbs[:, 1:4:2] = np.clip(bbs[:, 1:4:2] + ya1 - yb1, 0, h * 2)
-                mosaic_bbs.append(bbs)
-            if len(mosaic_bbs) > 0:
-                return mosaic, np.concatenate(mosaic_bbs)
 
 
 def reconstruct_color(img):
