@@ -113,9 +113,10 @@ class YOLO3TrainTransform:
         # generate training target so cpu workers can help reduce the workload on gpu
         gt_bboxes = mx.nd.array(bbox[np.newaxis, :, :4])
         gt_ids = mx.nd.array(bbox[np.newaxis, :, 4:5])
+        gt_mixratio = mx.nd.array(bbox[np.newaxis, :, -1:])
         objectness, center_targets, scale_targets, weights, class_targets = self._target_generator(
             self._fake_x, self._feat_maps, self._anchors, self._offsets,
-            gt_bboxes, gt_ids, None)
+            gt_bboxes, gt_ids, gt_mixratio)
         return (img, objectness[0], center_targets[0], scale_targets[0], weights[0],
                 class_targets[0], gt_bboxes[0])
 
@@ -131,17 +132,37 @@ class Sampler:
             self._transform = YOLO3TrainTransform(width, height, net, **kwargs)
 
     def __call__(self, idx):
-        raw = load_image(self._dataset[idx][1])
-        bboxes = np.array(self._dataset[idx][2])
         if self._training_mode:
+            raw, bboxes = self._load_mixup(idx)
             raw = raw.asnumpy()
             blur = random.randint(0, 3)
             if blur > 0:
                 raw = gauss_blur(raw, blur)
             raw = gauss_noise(raw)
             raw = mx.nd.array(raw)
+        else:
+            raw = load_image(self._dataset[idx][1])
+            bboxes = np.array(self._dataset[idx][2])
         res = self._transform(raw, bboxes)
         return [mx.nd.array(x) for x in res]
+
+    def _load_mixup(self, idx1):
+        raw1 = load_image(self._dataset[idx1][1])
+        bboxes1 = np.array(self._dataset[idx1][2])
+        idx2 = random.randint(0, len(self._dataset) - 1)
+        raw2 = load_image(self._dataset[idx2][1])
+        bboxes2 = np.array(self._dataset[idx2][2])
+        h = max(raw1.shape[0], raw2.shape[0])
+        w = max(raw1.shape[1], raw2.shape[1])
+        r = random.uniform(0.3, 0.7)
+        mix_raw = mx.nd.zeros(shape=(h, w, 3), dtype="float32")
+        mix_raw[:raw1.shape[0], :raw1.shape[1], :] += raw1.astype("float32") * r
+        mix_raw[:raw2.shape[0], :raw2.shape[1], :] += raw2.astype("float32") * (1.0 - r)
+        mix_bboxes = np.vstack([
+            np.hstack([bboxes1, np.full((bboxes1.shape[0], 1), r)]),
+            np.hstack([bboxes2, np.full((bboxes2.shape[0], 1), 1.0 - r)])
+        ])
+        return mix_raw.astype("uint8"), mix_bboxes
 
 
 def reconstruct_color(img):
