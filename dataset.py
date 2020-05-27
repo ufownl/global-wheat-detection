@@ -147,14 +147,19 @@ class Sampler:
         return [mx.nd.array(x) for x in res]
 
     def _load_mixup(self, idx1):
-        raw1 = load_image(self._dataset[idx1][1])
-        bboxes1 = np.array(self._dataset[idx1][2])
+        r = random.gauss(0.5, 0.5 / 1.96)
+        if r > 0.0:
+            raw1 = load_image(self._dataset[idx1][1])
+            bboxes1 = np.array(self._dataset[idx1][2])
+            if r >= 1.0:
+                return raw1, np.hstack([bboxes1, np.full((bboxes1.shape[0], 1), 1.0)])
         idx2 = random.randint(0, len(self._dataset) - 1)
         raw2 = load_image(self._dataset[idx2][1])
         bboxes2 = np.array(self._dataset[idx2][2])
+        if r <= 0.0:
+            return raw2, np.hstack([bboxes2, np.full((bboxes2.shape[0], 1), 1.0)])
         h = max(raw1.shape[0], raw2.shape[0])
         w = max(raw1.shape[1], raw2.shape[1])
-        r = random.uniform(0.3, 0.7)
         mix_raw = mx.nd.zeros(shape=(h, w, 3), dtype="float32")
         mix_raw[:raw1.shape[0], :raw1.shape[1], :] += raw1.astype("float32") * r
         mix_raw[:raw2.shape[0], :raw2.shape[1], :] += raw2.astype("float32") * (1.0 - r)
