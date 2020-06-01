@@ -35,16 +35,17 @@ def load_image(path):
 def get_batches(dataset, batch_size, width=512, height=512, net=None, ctx=mx.cpu()):
     batches = len(dataset) // batch_size
     sampler = Sampler(dataset, width, height, net)
+    stack_fn = [gcv.data.batchify.Stack()]
+    pad_fn = [gcv.data.batchify.Pad(pad_val=-1)]
+    if net is None:
+        batchify_fn = gcv.data.batchify.Tuple(*(stack_fn + pad_fn))
+    else:
+        batchify_fn = gcv.data.batchify.Tuple(*(stack_fn * 6 + pad_fn))
     with Pool(cpu_count() * 2) as p:
         for i in range(batches):
             start = i * batch_size
             samples = p.map(sampler, range(start, start + batch_size))
-            stack_fn = [gcv.data.batchify.Stack()]
-            pad_fn = [gcv.data.batchify.Pad(pad_val=-1)]
-            if net is None:
-                batch = gcv.data.batchify.Tuple(*(stack_fn + pad_fn))(samples)
-            else:
-                batch = gcv.data.batchify.Tuple(*(stack_fn * 6 + pad_fn))(samples)
+            batch = batchify_fn(samples)
             yield [x.as_in_context(ctx) for x in batch]
 
 def gauss_blur(image, level):
