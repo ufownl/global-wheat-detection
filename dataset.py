@@ -140,6 +140,25 @@ class Sampler:
             if blur > 0:
                 raw = gauss_blur(raw, blur)
             raw = gauss_noise(raw)
+            h, w, _ = raw.shape
+            rot = random.randint(0, 3)
+            if rot > 0:
+                raw = np.rot90(raw, k=rot)
+                if rot == 1:
+                    raw_bboxes = bboxes.copy()
+                    bboxes[:, [0, 2]] = raw_bboxes[:, [1, 3]]
+                    bboxes[:, [1, 3]] = w - raw_bboxes[:, [2, 0]]
+                elif rot == 2:
+                    bboxes[:, [0, 1, 2, 3]] = np.array([[w, h, w, h]]) - bboxes[:, [2, 3, 0, 1]]
+                elif rot == 3:
+                    raw_bboxes = bboxes.copy()
+                    bboxes[:, [0, 2]] = h - raw_bboxes[:, [1, 3]]
+                    bboxes[:, [1, 3]] = raw_bboxes[:, [2, 0]]
+                raw_bboxes = bboxes.copy()
+                bboxes[:, 0] = np.min(raw_bboxes[:, [0, 2]], axis=1)
+                bboxes[:, 1] = np.min(raw_bboxes[:, [1, 3]], axis=1)
+                bboxes[:, 2] = np.max(raw_bboxes[:, [0, 2]], axis=1)
+                bboxes[:, 3] = np.max(raw_bboxes[:, [1, 3]], axis=1)
             raw = mx.nd.array(raw)
         else:
             raw = load_image(self._dataset[idx][1])
