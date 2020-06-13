@@ -13,7 +13,7 @@ def train(best_score, start_epoch, max_epochs, learning_rate, batch_size, folds,
     print("Loading dataset...", flush=True)
     dataset = load_dataset("data")
     if val_k < folds:
-        print("Splitting k-folds: ", str(val_k) + "/" + str(folds))
+        print("Splitting %d-folds: " % folds, val_k)
         fold_size = math.ceil(len(dataset) / folds)
         split = (val_k * fold_size, (val_k + 1) * fold_size)
         training_set = dataset[:split[0]] + dataset[split[1]:]
