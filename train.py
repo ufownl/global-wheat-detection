@@ -1,5 +1,6 @@
 import os
 import time
+import math
 import random
 import argparse
 import mxnet as mx
@@ -8,13 +9,19 @@ from dataset import load_dataset, get_batches
 from model import init_model, load_model
 
 
-def train(best_score, start_epoch, max_epochs, learning_rate, batch_size, img_w, img_h, sgd, context):
+def train(best_score, start_epoch, max_epochs, learning_rate, batch_size, folds, val_k, img_w, img_h, sgd, context):
     print("Loading dataset...", flush=True)
     dataset = load_dataset("data")
-    split = int(len(dataset) * 0.9)
-    training_set = dataset[:split]
+    if val_k < folds:
+        fold_size = math.ceil(len(dataset) / folds)
+        split = (val_k * fold_size, (val_k + 1) * fold_size)
+        training_set = dataset[:split[0]] + dataset[split[1]:]
+        validation_set = dataset[split[0]:split[1]]
+    else:
+        split = int(len(dataset) * 0.9)
+        training_set = dataset[:split]
+        validation_set = dataset[split:]
     print("Training set: ", len(training_set))
-    validation_set = dataset[split:]
     print("Validation set: ", len(validation_set))
 
     if os.path.isfile("model/global-wheat-yolo3-darknet53.params"):
@@ -94,6 +101,8 @@ if __name__ == "__main__":
     parser.add_argument("--max_epochs", help="set the max epochs (default: 100)", type=int, default=100)
     parser.add_argument("--learning_rate", help="set the learning rate (default: 0.001)", type=float, default=0.001)
     parser.add_argument("--batch_size", help="set the batch size (default: 32)", type=int, default=32)
+    parser.add_argument("--folds", help="set the number of folds (default: 0)", type=int, default=0)
+    parser.add_argument("--val_k", help="set the index of the validation fold (default: 0)", type=int, default=0)
     parser.add_argument("--img_w", help="set the width of training images (default: 512)", type=int, default=512)
     parser.add_argument("--img_h", help="set the height of training images (default: 512)", type=int, default=512)
     parser.add_argument("--sgd", help="using sgd optimizer", action="store_true")
@@ -106,4 +115,4 @@ if __name__ == "__main__":
     else:
         context = mx.cpu(args.device_id)
 
-    train(args.best_score, args.start_epoch, args.max_epochs, args.learning_rate, args.batch_size, args.img_w, args.img_h, args.sgd, context)
+    train(args.best_score, args.start_epoch, args.max_epochs, args.learning_rate, args.batch_size, args.folds, args.val_k, args.img_w, args.img_h, args.sgd, context)
