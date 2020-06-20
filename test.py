@@ -9,9 +9,12 @@ from dataset import load_image
 from ensemble_boxes import *
 
 
-def test(images, threshold, img_s, context):
+def test(images, folds, threshold, img_s, context):
     print("Loading model...")
-    model = load_model("model/global-wheat-yolo3-darknet53.params", ctx=context)
+    if folds > 0:
+        models = [load_model("model/global-wheat-yolo3-darknet53_fold%d.params" % i, ctx=context) for i in range(folds)]
+    else:
+        models = [load_model("model/global-wheat-yolo3-darknet53.params", ctx=context)]
     for path in images:
         print(path)
         raw = load_image(path)
@@ -26,40 +29,41 @@ def test(images, threshold, img_s, context):
             rot = random.randint(0, 3)
             if rot > 0:
                 x = np.rot90(x.asnumpy(), k=rot, axes=(2, 3))
-            classes, scores, bboxes = model(mx.nd.array(x, ctx=context))
-            if rot > 0:
-                if rot == 1:
+            for model in models:
+                classes, scores, bboxes = model(mx.nd.array(x, ctx=context))
+                if rot > 0:
+                    if rot == 1:
+                        raw_bboxes = bboxes.copy()
+                        bboxes[0, :, [0, 2]] = xh - raw_bboxes[0, :, [1, 3]]
+                        bboxes[0, :, [1, 3]] = raw_bboxes[0, :, [2, 0]]
+                    elif rot == 2:
+                        bboxes[0, :, [0, 1, 2, 3]] = mx.nd.array([[xw], [xh], [xw], [xh]], ctx=context) - bboxes[0, :, [2, 3, 0, 1]]
+                    elif rot == 3:
+                        raw_bboxes = bboxes.copy()
+                        bboxes[0, :, [0, 2]] = raw_bboxes[0, :, [1, 3]]
+                        bboxes[0, :, [1, 3]] = xw - raw_bboxes[0, :, [2, 0]]
                     raw_bboxes = bboxes.copy()
-                    bboxes[0, :, [0, 2]] = xh - raw_bboxes[0, :, [1, 3]]
-                    bboxes[0, :, [1, 3]] = raw_bboxes[0, :, [2, 0]]
-                elif rot == 2:
-                    bboxes[0, :, [0, 1, 2, 3]] = mx.nd.array([[xw], [xh], [xw], [xh]], ctx=context) - bboxes[0, :, [2, 3, 0, 1]]
-                elif rot == 3:
-                    raw_bboxes = bboxes.copy()
-                    bboxes[0, :, [0, 2]] = raw_bboxes[0, :, [1, 3]]
-                    bboxes[0, :, [1, 3]] = xw - raw_bboxes[0, :, [2, 0]]
-                raw_bboxes = bboxes.copy()
-                bboxes[0, :, 0] = raw_bboxes[0, :, [0, 2]].min(axis=0)
-                bboxes[0, :, 1] = raw_bboxes[0, :, [1, 3]].min(axis=0)
-                bboxes[0, :, 2] = raw_bboxes[0, :, [0, 2]].max(axis=0)
-                bboxes[0, :, 3] = raw_bboxes[0, :, [1, 3]].max(axis=0)
-            bboxes[0, :, :] = gcv.data.transforms.bbox.flip(bboxes[0, :, :], (xw, xh), flip_x=flips[0], flip_y=flips[1])
-            bboxes[0, :, 0::2] = (bboxes[0, :, 0::2] / (xw - 1)).clip(0.0, 1.0)
-            bboxes[0, :, 1::2] = (bboxes[0, :, 1::2] / (xh - 1)).clip(0.0, 1.0)
-            classes_list.append([
-                int(classes[0, i].asscalar()) for i in range(classes.shape[1])
-                    if classes[0, i].asscalar() >= 0.0
+                    bboxes[0, :, 0] = raw_bboxes[0, :, [0, 2]].min(axis=0)
+                    bboxes[0, :, 1] = raw_bboxes[0, :, [1, 3]].min(axis=0)
+                    bboxes[0, :, 2] = raw_bboxes[0, :, [0, 2]].max(axis=0)
+                    bboxes[0, :, 3] = raw_bboxes[0, :, [1, 3]].max(axis=0)
+                bboxes[0, :, :] = gcv.data.transforms.bbox.flip(bboxes[0, :, :], (xw, xh), flip_x=flips[0], flip_y=flips[1])
+                bboxes[0, :, 0::2] = (bboxes[0, :, 0::2] / (xw - 1)).clip(0.0, 1.0)
+                bboxes[0, :, 1::2] = (bboxes[0, :, 1::2] / (xh - 1)).clip(0.0, 1.0)
+                classes_list.append([
+                    int(classes[0, i].asscalar()) for i in range(classes.shape[1])
+                        if classes[0, i].asscalar() >= 0.0
 
-            ])
-            scores_list.append([
-                scores[0, i].asscalar() for i in range(classes.shape[1])
-                    if classes[0, i].asscalar() >= 0.0
+                ])
+                scores_list.append([
+                    scores[0, i].asscalar() for i in range(classes.shape[1])
+                        if classes[0, i].asscalar() >= 0.0
 
-            ])
-            bboxes_list.append([
-                bboxes[0, i].asnumpy().tolist() for i in range(classes.shape[1])
-                    if classes[0, i].asscalar() >= 0.0
-            ])
+                ])
+                bboxes_list.append([
+                    bboxes[0, i].asnumpy().tolist() for i in range(classes.shape[1])
+                        if classes[0, i].asscalar() >= 0.0
+                ])
         bboxes, scores, classes = weighted_boxes_fusion(bboxes_list, scores_list, classes_list)
         bboxes[:, 0::2] *= rw - 1
         bboxes[:, 1::2] *= rh - 1
@@ -73,6 +77,7 @@ def test(images, threshold, img_s, context):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Start a global-wheat-detection tester.")
     parser.add_argument("images", metavar="IMG", help="path of the image file[s]", type=str, nargs="+")
+    parser.add_argument("--folds", help="set the number of folds (default: 0)", type=int, default=0)
     parser.add_argument("--threshold", help="set the positive threshold (default: 0.5)", type=float, default=0.5)
     parser.add_argument("--img_s", help="set the size of image short side", type=int, default=512)
     parser.add_argument("--device_id", help="select device that the model using (default: 0)", type=int, default=0)
@@ -84,4 +89,4 @@ if __name__ == "__main__":
     else:
         context = mx.cpu(args.device_id)
 
-    test(args.images, args.threshold, args.img_s, context)
+    test(args.images, args.folds, args.threshold, args.img_s, context)
