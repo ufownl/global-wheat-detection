@@ -19,11 +19,14 @@ import random
 import argparse
 import mxnet as mx
 import gluoncv as gcv
+from mxnet.contrib import amp
 from dataset import load_dataset, get_batches
 from model import init_model, load_model
 
 
 def train(best_score, start_epoch, max_epochs, learning_rate, batch_size, folds, val_k, img_w, img_h, sgd, context):
+    amp.init()
+
     print("Loading dataset...", flush=True)
     dataset = load_dataset("data")
     if val_k < folds:
@@ -51,12 +54,13 @@ def train(best_score, start_epoch, max_epochs, learning_rate, batch_size, folds,
         trainer = mx.gluon.Trainer(model.collect_params(), "SGD", {
             "learning_rate": learning_rate,
             "momentum": 0.5
-        })
+        }, kvstore='local', update_on_kvstore=False)
     else:
         print("Optimizer: Nadam")
         trainer = mx.gluon.Trainer(model.collect_params(), "Nadam", {
             "learning_rate": learning_rate
-        })
+        }, kvstore='local', update_on_kvstore=False)
+    amp.init_trainer(trainer)
     if os.path.isfile("model/global-wheat-yolo3-darknet53.state"):
         trainer.load_states("model/global-wheat-yolo3-darknet53.state")
 
@@ -72,7 +76,8 @@ def train(best_score, start_epoch, max_epochs, learning_rate, batch_size, folds,
             with mx.autograd.record():
                 obj_loss, center_loss, scale_loss, cls_loss = model(x, gt_bboxes, objectness, center_targets, scale_targets, weights, class_targets)
                 L = obj_loss + center_loss + scale_loss + cls_loss
-                L.backward()
+                with amp.scale_loss(L, trainer) as scaled_L:
+                    scaled_L.backward()
             trainer.step(x.shape[0])
             training_batch_L = mx.nd.mean(L).asscalar()
             if training_batch_L != training_batch_L:
@@ -120,9 +125,9 @@ if __name__ == "__main__":
     parser.add_argument("--val_k", help="set the index of the validation fold (default: 0)", type=int, default=0)
     parser.add_argument("--img_w", help="set the width of training images (default: 512)", type=int, default=512)
     parser.add_argument("--img_h", help="set the height of training images (default: 512)", type=int, default=512)
-    parser.add_argument("--sgd", help="using sgd optimizer", action="store_true")
+    parser.add_argument("--sgd", help="use SGD optimizer", action="store_true")
     parser.add_argument("--device_id", help="select device that the model using (default: 0)", type=int, default=0)
-    parser.add_argument("--gpu", help="using gpu acceleration", action="store_true")
+    parser.add_argument("--gpu", help="use GPU acceleration", action="store_true")
     args = parser.parse_args()
 
     if args.gpu:
