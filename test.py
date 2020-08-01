@@ -93,7 +93,7 @@ if __name__ == "__main__":
     parser.add_argument("images", metavar="IMG", help="path of the image file[s]", type=str, nargs="+")
     parser.add_argument("--folds", help="set the number of folds (default: 0)", type=int, default=0)
     parser.add_argument("--threshold", help="set the positive threshold (default: 0.5)", type=float, default=0.5)
-    parser.add_argument("--img_s", help="set the size of image short side", type=int, default=512)
+    parser.add_argument("--img_s", help="set the size of image short side (default: 512)", type=int, default=512)
     parser.add_argument("--device_id", help="select device that the model using (default: 0)", type=int, default=0)
     parser.add_argument("--gpu", help="using gpu acceleration", action="store_true")
     args = parser.parse_args()
